@@ -219,7 +219,7 @@ func BenchmarkFastWalkGitRepoChannels(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		var files, errors int
-		FastWalkGitRepo(entries[0], func(parent string, info os.FileInfo, err error) {
+		FastWalkGitRepoAll(entries[0], func(parent string, info os.FileInfo, err error) {
 			if err != nil {
 				errors++
 			} else {
@@ -241,7 +241,7 @@ func BenchmarkFastWalkGitRepoCallback(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		var files, errors int
-		FastWalkGitRepo(entries[0], func(parentDir string, info os.FileInfo, err error) {
+		FastWalkGitRepoAll(entries[0], func(parentDir string, info os.FileInfo, err error) {
 			if err != nil {
 				errors++
 			} else {

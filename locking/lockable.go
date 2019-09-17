@@ -12,6 +12,7 @@ import (
 	"github.com/git-lfs/git-lfs/git"
 	"github.com/git-lfs/git-lfs/git/gitattr"
 	"github.com/git-lfs/git-lfs/tools"
+	"github.com/rubyist/tracerx"
 )
 
 // GetLockablePatterns returns a list of patterns in .gitattributes which are
@@ -113,45 +114,34 @@ func (c *Client) FixFileWriteFlagsInDir(dir string, lockablePatterns, unlockable
 // Internal implementation of fixing file write flags with precompiled filters
 func (c *Client) fixFileWriteFlags(absPath, workingDir string, lockable, unlockable *filepathfilter.Filter) error {
 
+	// Build a list of files
+	lsFiles, err := git.NewLsFiles(workingDir, true, c.ModifyIgnoredFiles)
+	if err != nil {
+		return err
+	}
+
+	var wg sync.WaitGroup
 	var errs []error
-	var errMux sync.Mutex
+	messages := make(chan error)
 
-	addErr := func(err error) {
-		errMux.Lock()
-		defer errMux.Unlock()
+	wg.Add(len(lsFiles.Files))
+	tracerx.Printf("fixFileWriteFlags: fixing file write flags for %d candidates.", len(lsFiles.Files))
 
-		errs = append(errs, err)
+	for f := range lsFiles.Files {
+		go func() {
+			defer wg.Done()
+			err = c.fixSingleFileWriteFlags(f, lockable, unlockable)
+			if err != nil {
+				messages <- err
+			}
+		}()
 	}
-
-	recursor := tools.FastWalkGitRepo
-	if c.ModifyIgnoredFiles {
-		recursor = tools.FastWalkGitRepoAll
-	}
-
-	recursor(absPath, func(parentDir string, fi os.FileInfo, err error) {
-		if err != nil {
-			addErr(err)
-			return
+	go func() {
+		for i := range messages {
+			errs = append(errs, i)
 		}
-		// Skip dirs, we only need to check files
-		if fi.IsDir() {
-			return
-		}
-		abschild := filepath.Join(parentDir, fi.Name())
-
-		// This is a file, get relative to repo root
-		relpath, err := filepath.Rel(workingDir, abschild)
-		if err != nil {
-			addErr(err)
-			return
-		}
-
-		err = c.fixSingleFileWriteFlags(relpath, lockable, unlockable)
-		if err != nil {
-			addErr(err)
-		}
-
-	})
+	}()
+	wg.Wait()
 	return errors.Combine(errs)
 }
 
