@@ -3,12 +3,8 @@ package git
 import (
 	"os"
 	"path/filepath"
-	"bufio"
-	"path"
 	"sort"
-	"io/ioutil"
 
-	"github.com/git-lfs/git-lfs/errors"
 	"github.com/git-lfs/git-lfs/filepathfilter"
 	"github.com/git-lfs/git-lfs/git/gitattr"
 	"github.com/git-lfs/git-lfs/tools"
@@ -169,55 +165,6 @@ func GetAttributeFilter(workingDir, gitDir string) *filepathfilter.Filter {
 	return filepathfilter.NewFromPatterns(patterns, nil)
 }
 
-func gitListFilesWithName(wd, name string) ([]string, error) {
-	cmd := gitNoLFS("ls-files", "-z", "--exclude-standard")
-	cmd.Dir = wd
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, err
-	}
-
-	s := bufio.NewScanner(stdout)
-	onComma := func(data []byte, atEOF bool) (advance int, token []byte, err error) {
-		for i := 0; i < len(data); i++ {
-			if data[i] == '\x00' {
-				buf := data[:i]
-				return i + 1, buf, nil
-			}
-		}
-		return 0, nil, nil
-	}
-	s.Split(onComma)
-
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-
-	var files []string
-	for s.Scan() {
-		base := path.Base(s.Text())
-		if base == name {
-			files = append(files, s.Text())
-		}
-	}
-
-	msg, _ := ioutil.ReadAll(stderr)
-
-	// First check if there was a non-zero exit code given
-	// when Wait()-ing on the command execution.
-	if err := cmd.Wait(); err != nil {
-		return nil, errors.Errorf("Error in git ls-files -z --exclude-standard: %v %s",
-			err, msg)
-	}
-
-	return files, nil
-}
-
 func findAttributeFiles(workingDir, gitDir string) []attrFile {
 	var paths []attrFile
 
@@ -226,20 +173,24 @@ func findAttributeFiles(workingDir, gitDir string) []attrFile {
 		paths = append(paths, attrFile{path: repoAttributes, readMacros: true})
 	}
 
-	// NB: workingDir must be working tree root
-	lsFiles, err := NewLsFiles(workingDir, false, true)
-	if err == nil {
-		if gitattributesFiles, present := lsFiles.FilesByName[".gitattributes"]; present {
-			for _, f := range gitattributesFiles {
-				tracerx.Printf("findAttributeFiles: located %s", f.FullPath)
-				paths = append(paths, attrFile{
-					path: filepath.Join(workingDir, f.FullPath),
-					readMacros: f.FullPath == ".gitattributes", // Read macros from the top-level attributes
-				})
-			}
+	lsFiles, err := NewLsFiles(workingDir, true)
+	if err != nil {
+		tracerx.Printf("Error finding .gitattributes: %v", err)
+		return paths
+	}
+
+	if gitattributesFiles, present := lsFiles.FilesByName[".gitattributes"]; present {
+		for _, f := range gitattributesFiles {
+			tracerx.Printf("findAttributeFiles: located %s", f.FullPath)
+			paths = append(paths, attrFile{
+				path: filepath.Join(workingDir, f.FullPath),
+				readMacros: f.FullPath == ".gitattributes", // Read macros from the top-level attributes
+			})
 		}
 	}
 
+	// reverse the order of the files so more specific entries are found first
+	// when iterating from the front (respects precedence)
 	sort.Slice(paths[:], func(i, j int) bool {
 		return len(paths[i].path) > len(paths[j].path)
 	})

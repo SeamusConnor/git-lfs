@@ -238,7 +238,7 @@ func VerifyFileHash(oid, path string) error {
 // FastWalkCallback is the signature for the callback given to FastWalkGitRepo()
 type FastWalkCallback func(parentDir string, info os.FileInfo, err error)
 
-// FastWalkGitRepoAll is a more optimal implementation of filepath.Walk for a Git
+// FastWalkDir is a more optimal implementation of filepath.Walk for a Git
 // repo. The callback guaranteed to be called sequentially. The function returns
 // once all files and errors have triggered callbacks.
 // It differs in the following ways:
@@ -249,7 +249,7 @@ type FastWalkCallback func(parentDir string, info os.FileInfo, err error)
 //  * Automatically ignores any .git directories
 //
 // rootDir - Absolute path to the top of the repository working directory
-func FastWalkGitRepoAll(rootDir string, cb FastWalkCallback) {
+func FastWalkDir(rootDir string, cb FastWalkCallback) {
 	fastWalkCallback(fastWalkWithExcludeFiles(rootDir), cb)
 }
 

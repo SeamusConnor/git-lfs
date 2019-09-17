@@ -5,14 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/git-lfs/git-lfs/errors"
 	"github.com/git-lfs/git-lfs/filepathfilter"
 	"github.com/git-lfs/git-lfs/git"
 	"github.com/git-lfs/git-lfs/git/gitattr"
 	"github.com/git-lfs/git-lfs/tools"
-	"github.com/rubyist/tracerx"
 )
 
 // GetLockablePatterns returns a list of patterns in .gitattributes which are
@@ -115,34 +113,19 @@ func (c *Client) FixFileWriteFlagsInDir(dir string, lockablePatterns, unlockable
 func (c *Client) fixFileWriteFlags(absPath, workingDir string, lockable, unlockable *filepathfilter.Filter) error {
 
 	// Build a list of files
-	lsFiles, err := git.NewLsFiles(workingDir, true, c.ModifyIgnoredFiles)
+	lsFiles, err := git.NewLsFiles(workingDir, !c.ModifyIgnoredFiles)
 	if err != nil {
 		return err
 	}
 
-	var wg sync.WaitGroup
-	var errs []error
-	messages := make(chan error)
-
-	wg.Add(len(lsFiles.Files))
-	tracerx.Printf("fixFileWriteFlags: fixing file write flags for %d candidates.", len(lsFiles.Files))
-
 	for f := range lsFiles.Files {
-		go func() {
-			defer wg.Done()
-			err = c.fixSingleFileWriteFlags(f, lockable, unlockable)
-			if err != nil {
-				messages <- err
-			}
-		}()
-	}
-	go func() {
-		for i := range messages {
-			errs = append(errs, i)
+		err = c.fixSingleFileWriteFlags(f, lockable, unlockable)
+		if err != nil {
+			return err
 		}
-	}()
-	wg.Wait()
-	return errors.Combine(errs)
+	}
+
+	return nil
 }
 
 // FixLockableFileWriteFlags checks each file in the provided list, and for

@@ -8,7 +8,7 @@ import (
 
 	"github.com/git-lfs/git-lfs/errors"
 	"github.com/git-lfs/git-lfs/tools"
-	_ "github.com/rubyist/tracerx"
+	"github.com/rubyist/tracerx"
 )
 
 type lsFileInfo struct {
@@ -20,24 +20,23 @@ type LsFiles struct {
 	FilesByName map[string][]*lsFileInfo
 }
 
-func NewLsFiles(workingDir string, untracked, standardExclude bool) (*LsFiles, error) {
+func NewLsFiles(workingDir string, standardExclude bool) (*LsFiles, error) {
 
-	// Build up the command. Execute it in the specified working dir. NB: this
-	// will only list files that are tracked by git. Adding "-o" expands the
-	// scope to all files in the tree, but that requires traversing the
-	// filesystem so is significantly slower.
 	args := []string{
 		"ls-files",
-		"-z",
+		"-z", // Use a NUL separator. This also disables the escaping of special characters.
+		"--others",
+		"--cached",
 	}
-	if untracked {
-		args = append(args, "-o")
-	}
+
 	if standardExclude {
 		args = append(args, "--exclude-standard")
 	}
 	cmd := gitNoLFS(args...)
 	cmd.Dir = workingDir
+
+    tracerx.Printf("NewLsFiles: running in %s git %s",
+			workingDir, strings.Join(args, " "))
 
 	// Capture stdout and stderr
 	stdout, err := cmd.StdoutPipe()
@@ -61,7 +60,7 @@ func NewLsFiles(workingDir string, untracked, standardExclude bool) (*LsFiles, e
 		FilesByName: make(map[string][]*lsFileInfo),
 	}
 
-	// Setup a goroutine to drain stderr, as large amounts of error output may cause
+	// Setup a goroutine to drain stderr as large amounts of error output may cause
 	// the subprocess to block.
 	errorMessages := make(chan []byte)
 	go func() {
